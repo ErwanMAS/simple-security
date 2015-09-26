@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -28,7 +29,6 @@ public class CameraView implements SurfaceHolder.Callback {
     private static final long MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS = 2000;
     private static final int JPEG_IMAGE_QUALITY = 85;
     private Activity mActivity;
-    private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
     private Camera mCamera;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -67,7 +67,6 @@ public class CameraView implements SurfaceHolder.Callback {
 
     public CameraView(Activity activity, SurfaceView surfaceView) {
         mActivity = activity;
-        mSurfaceView = surfaceView;
         mSurfaceHolder = surfaceView.getHolder();
         mSurfaceHolder.addCallback(this);
     }
@@ -89,7 +88,7 @@ public class CameraView implements SurfaceHolder.Callback {
             }
 
             // Create an image file name
-            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
             return new File(mediaStorageDir.getPath() + File.separator +
                     "IMG_" + timeStamp + ".jpg");
         }
@@ -207,7 +206,7 @@ public class CameraView implements SurfaceHolder.Callback {
         try {
             mCamera.setPreviewDisplay(mSurfaceHolder);
         } catch (IOException e) {
-            Log.e(LOG_TAG, "Error setting camera preview display", e);
+            Log.d(LOG_TAG, "Error setting camera preview display", e);
         }
 
         mCamera.startPreview();

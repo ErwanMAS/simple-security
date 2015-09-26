@@ -11,8 +11,6 @@ import android.view.WindowManager;
 import android.widget.Switch;
 
 public class MainActivity extends AppCompatActivity {
-    private static final String LOG_TAG = MainActivity.class.getSimpleName();
-
     private CameraView mCameraView;
 
     @Override
