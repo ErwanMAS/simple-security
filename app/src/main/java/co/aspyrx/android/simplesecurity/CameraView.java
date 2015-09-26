@@ -33,7 +33,7 @@ import retrofit.mime.TypedFile;
 
 public class CameraView implements SurfaceHolder.Callback {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
-    private static final int PIXEL_VALUE_DIFFERENCE_THRESHOLD = 32;
+    private static final int PIXEL_VALUE_DIFFERENCE_THRESHOLD = 16;
     private static final int PERCENT_DIFFERENT_PIXELS_THRESHOLD = 10;
     private static final long MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS = 2000;
     private static final int JPEG_IMAGE_QUALITY = 85;
@@ -48,6 +48,7 @@ public class CameraView implements SurfaceHolder.Callback {
     private ExecutorService executor = Executors.newSingleThreadExecutor();
     private byte[] lastPreviewFrame;
     private Date lastMotionFrameDate = new Date(0);
+    private Camera.Size previewSize;
 
     private Camera.PreviewCallback previewCallback = new Camera.PreviewCallback() {
         @Override
@@ -55,7 +56,7 @@ public class CameraView implements SurfaceHolder.Callback {
             executor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    if (lastPreviewFrame != null) {
+                    if (lastPreviewFrame != null && data != null) {
                         int diff_count = 0;
                         for (int i = 0; i < data.length; i++) {
                             int diff = Math.abs(data[i] - lastPreviewFrame[i]);
@@ -116,8 +117,7 @@ public class CameraView implements SurfaceHolder.Callback {
     }
 
     public void savePreviewAsJpeg(byte[] data, Camera camera) {
-        Camera.Size size = camera.getParameters().getPreviewSize();
-        YuvImage image = new YuvImage(data, ImageFormat.NV21, size.width, size.height, null);
+        YuvImage image = new YuvImage(data, ImageFormat.NV21, previewSize.width, previewSize.height, null);
 
         File pictureFile = getOutputImageFile();
         if (pictureFile == null) {
@@ -125,12 +125,18 @@ public class CameraView implements SurfaceHolder.Callback {
         } else {
             try {
                 FileOutputStream fos = new FileOutputStream(pictureFile);
-                image.compressToJpeg(new Rect(0, 0, size.width, size.height), JPEG_IMAGE_QUALITY, fos);
+                image.compressToJpeg(new Rect(0, 0, previewSize.width, previewSize.height), JPEG_IMAGE_QUALITY, fos);
                 fos.close();
 
                 TypedFile photo = new TypedFile("multipart/form-data", pictureFile);
-                Response response = uploadService.uploadPhoto(photo);
-                Log.d(LOG_TAG, "upload: " + response.getStatus());
+                try {
+                    Response response = uploadService.uploadPhoto(photo);
+                    Log.d(LOG_TAG, "upload: " + response.getStatus());
+                } catch (Exception e) {
+                    Log.d(LOG_TAG, "error uploading", e);
+                }
+
+                pictureFile.delete();
             } catch (FileNotFoundException e) {
                 Log.d(LOG_TAG, "File not found: ", e);
             } catch (IOException e) {
@@ -184,10 +190,10 @@ public class CameraView implements SurfaceHolder.Callback {
 
         // Set preview FPS to lowest possible FPS to improve performance and reduce strain
         List<int[]> fpsRanges = parameters.getSupportedPreviewFpsRange();
-        int[] fpsRange = fpsRanges.get(fpsRanges.size() - 1);
+        int[] fpsRange = fpsRanges.get(fpsRanges.size() / 2);
         parameters.setPreviewFpsRange(fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX], fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX]);
 
-        Camera.Size previewSize = getOptimalPreviewSize(parameters.getSupportedPreviewSizes(), width, height);
+        previewSize = getOptimalPreviewSize(parameters.getSupportedPreviewSizes(), width, height);
         parameters.setPreviewSize(previewSize.width, previewSize.height);
 
         mCamera.setParameters(parameters);
