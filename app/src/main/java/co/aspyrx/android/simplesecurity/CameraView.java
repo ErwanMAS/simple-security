@@ -35,9 +35,12 @@ public class CameraView implements SurfaceHolder.Callback {
         Camera.Parameters parameters = mCamera.getParameters();
 
         parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-        parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_EDOF);
+        parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
 
-        Log.v(LOG_TAG, width + "x" + height);
+        // Set preview FPS to lowest possible FPS to improve performance and reduce strain
+        List<int[]> fpsRanges = parameters.getSupportedPreviewFpsRange();
+        int[] fpsRange = fpsRanges.get(fpsRanges.size() - 1);
+        parameters.setPreviewFpsRange(fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX], fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX]);
 
         Camera.Size size = getOptimalPreviewSize(parameters.getSupportedPreviewSizes(), width, height);
         parameters.setPreviewSize(size.width, size.height);
@@ -52,6 +55,7 @@ public class CameraView implements SurfaceHolder.Callback {
 
     public void releaseCamera() {
         if (mCamera != null) {
+            mCamera.setPreviewCallback(null);
             mCamera.stopPreview();
             mCamera.release();
             mCamera = null;
@@ -96,6 +100,13 @@ public class CameraView implements SurfaceHolder.Callback {
         } catch (IOException e) {
             Log.e(LOG_TAG, "Error setting camera preview display", e);
         }
+
+        mCamera.setPreviewCallback(new Camera.PreviewCallback() {
+            @Override
+            public void onPreviewFrame(byte[] data, Camera camera) {
+
+            }
+        });
 
         mCamera.startPreview();
     }
