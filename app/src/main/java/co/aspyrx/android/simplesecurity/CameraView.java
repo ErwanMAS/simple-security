@@ -1,15 +1,19 @@
 package co.aspyrx.android.simplesecurity;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.os.Environment;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+
+import com.squareup.okhttp.OkHttpClient;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -22,12 +26,22 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import retrofit.RestAdapter;
+import retrofit.client.OkClient;
+import retrofit.client.Response;
+import retrofit.mime.TypedFile;
+
 public class CameraView implements SurfaceHolder.Callback {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
     private static final int PIXEL_VALUE_DIFFERENCE_THRESHOLD = 32;
     private static final int PERCENT_DIFFERENT_PIXELS_THRESHOLD = 10;
     private static final long MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS = 2000;
     private static final int JPEG_IMAGE_QUALITY = 85;
+    private static UploadService uploadService = new RestAdapter.Builder()
+            .setEndpoint("http://security.aspyrx.co")
+            .setClient(new OkClient(new OkHttpClient()))
+            .build()
+            .create(UploadService.class);
     private Activity mActivity;
     private SurfaceHolder mSurfaceHolder;
     private Camera mCamera;
@@ -69,6 +83,11 @@ public class CameraView implements SurfaceHolder.Callback {
         mActivity = activity;
         mSurfaceHolder = surfaceView.getHolder();
         mSurfaceHolder.addCallback(this);
+        TelephonyManager tm = (TelephonyManager) activity.getSystemService(Context.TELEPHONY_SERVICE);
+        final String tmDevice, tmSerial, androidId;
+        tmDevice = "" + tm.getDeviceId();
+        tmSerial = "" + tm.getSimSerialNumber();
+        androidId = "" + android.provider.Settings.Secure.getString(activity.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
     }
 
     /**
@@ -108,6 +127,10 @@ public class CameraView implements SurfaceHolder.Callback {
                 FileOutputStream fos = new FileOutputStream(pictureFile);
                 image.compressToJpeg(new Rect(0, 0, size.width, size.height), JPEG_IMAGE_QUALITY, fos);
                 fos.close();
+
+                TypedFile photo = new TypedFile("multipart/form-data", pictureFile);
+                Response response = uploadService.uploadPhoto(photo);
+                Log.d(LOG_TAG, "upload: " + response.getStatus());
             } catch (FileNotFoundException e) {
                 Log.d(LOG_TAG, "File not found: ", e);
             } catch (IOException e) {
