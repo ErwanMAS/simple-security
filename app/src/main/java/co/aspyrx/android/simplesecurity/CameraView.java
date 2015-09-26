@@ -1,13 +1,21 @@
 package co.aspyrx.android.simplesecurity;
 
 import android.app.Activity;
+import android.graphics.ImageFormat;
+import android.graphics.Rect;
+import android.graphics.YuvImage;
 import android.hardware.Camera;
+import android.os.Environment;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -16,8 +24,9 @@ import java.util.concurrent.Executors;
 public class CameraView implements SurfaceHolder.Callback {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
     private static final int PIXEL_VALUE_DIFFERENCE_THRESHOLD = 32;
-    private static final int PERCENT_DIFFERENT_PIXELS_THRESHOLD = 20;
+    private static final int PERCENT_DIFFERENT_PIXELS_THRESHOLD = 10;
     private static final long MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS = 2000;
+    private static final int JPEG_IMAGE_QUALITY = 85;
     private Activity mActivity;
     private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
@@ -26,11 +35,86 @@ public class CameraView implements SurfaceHolder.Callback {
     private byte[] lastPreviewFrame;
     private Date lastMotionFrameDate = new Date(0);
 
+    private Camera.PreviewCallback previewCallback = new Camera.PreviewCallback() {
+        @Override
+        public void onPreviewFrame(final byte[] data, final Camera camera) {
+            executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    if (lastPreviewFrame != null) {
+                        int diff_count = 0;
+                        for (int i = 0; i < data.length; i++) {
+                            int diff = Math.abs(data[i] - lastPreviewFrame[i]);
+                            if (diff > PIXEL_VALUE_DIFFERENCE_THRESHOLD) {
+                                diff_count++;
+                            }
+                        }
+
+                        if (diff_count > data.length / 100 * PERCENT_DIFFERENT_PIXELS_THRESHOLD) {
+                            Date now = new Date();
+                            if (now.getTime() - lastMotionFrameDate.getTime() > MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS) {
+                                savePreviewAsJpeg(lastPreviewFrame, camera);
+                                lastMotionFrameDate = now;
+                            }
+                        }
+                    }
+
+                    lastPreviewFrame = data;
+                }
+            });
+        }
+    };
+
     public CameraView(Activity activity, SurfaceView surfaceView) {
         mActivity = activity;
         mSurfaceView = surfaceView;
         mSurfaceHolder = surfaceView.getHolder();
         mSurfaceHolder.addCallback(this);
+    }
+
+    /**
+     * Create a File for saving an image
+     */
+    private static File getOutputImageFile() {
+        if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
+            File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_PICTURES), "Simple Security");
+
+            // Create the storage directory if it does not exist
+            if (!mediaStorageDir.exists()) {
+                if (!mediaStorageDir.mkdirs()) {
+                    Log.d(LOG_TAG, "failed to create directory");
+                    return null;
+                }
+            }
+
+            // Create an image file name
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            return new File(mediaStorageDir.getPath() + File.separator +
+                    "IMG_" + timeStamp + ".jpg");
+        }
+
+        return null;
+    }
+
+    public void savePreviewAsJpeg(byte[] data, Camera camera) {
+        Camera.Size size = camera.getParameters().getPreviewSize();
+        YuvImage image = new YuvImage(data, ImageFormat.NV21, size.width, size.height, null);
+
+        File pictureFile = getOutputImageFile();
+        if (pictureFile == null) {
+            Log.d(LOG_TAG, "failed to create media file");
+        } else {
+            try {
+                FileOutputStream fos = new FileOutputStream(pictureFile);
+                image.compressToJpeg(new Rect(0, 0, size.width, size.height), JPEG_IMAGE_QUALITY, fos);
+                fos.close();
+            } catch (FileNotFoundException e) {
+                Log.d(LOG_TAG, "File not found: ", e);
+            } catch (IOException e) {
+                Log.d(LOG_TAG, "Error accessing file: ", e);
+            }
+        }
     }
 
     @Override
@@ -40,83 +124,6 @@ public class CameraView implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        Camera.Parameters parameters = mCamera.getParameters();
-
-        parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-        parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_EDOF);
-
-        // Set preview FPS to lowest possible FPS to improve performance and reduce strain
-        List<int[]> fpsRanges = parameters.getSupportedPreviewFpsRange();
-        int[] fpsRange = fpsRanges.get(fpsRanges.size() - 1);
-        parameters.setPreviewFpsRange(fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX], fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX]);
-
-        Camera.Size size = getOptimalPreviewSize(parameters.getSupportedPreviewSizes(), width, height);
-        parameters.setPreviewSize(size.width, size.height);
-
-        mCamera.setParameters(parameters);
-    }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        releaseCamera();
-    }
-
-    public void releaseCamera() {
-        if (mCamera != null) {
-            mCamera.setPreviewCallback(null);
-            mCamera.stopPreview();
-            mCamera.release();
-            mCamera = null;
-        }
-    }
-
-    public void stopRecording() {
-        if (mCamera != null) {
-            mCamera.setPreviewCallback(null);
-        }
-    }
-
-    public boolean startRecording() {
-        if (mCamera == null) {
-            return false;
-        }
-
-        mCamera.setPreviewCallback(new Camera.PreviewCallback() {
-            @Override
-            public void onPreviewFrame(final byte[] data, Camera camera) {
-                executor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (lastPreviewFrame != null) {
-                            int diff_count = 0;
-                            for (int i = 0; i < data.length; i++) {
-                                int diff = Math.abs(data[i] - lastPreviewFrame[i]);
-                                if (diff > PIXEL_VALUE_DIFFERENCE_THRESHOLD) {
-                                    diff_count++;
-                                }
-                            }
-
-                            if (diff_count > data.length / 100 * PERCENT_DIFFERENT_PIXELS_THRESHOLD) {
-                                Date now = new Date();
-                                if (now.getTime() - lastMotionFrameDate.getTime() > MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS) {
-                                    Log.v(LOG_TAG, "motion detected");
-                                    lastMotionFrameDate = now;
-                                }
-                            }
-                        }
-
-                        lastPreviewFrame = data;
-                    }
-                });
-            }
-        });
-
-        return true;
-    }
-
-    private void initCamera() {
-        mCamera = Camera.open(0);
-
         Camera.CameraInfo info = new Camera.CameraInfo();
         Camera.getCameraInfo(0, info);
         int rotation = mActivity.getWindowManager().getDefaultDisplay()
@@ -146,6 +153,56 @@ public class CameraView implements SurfaceHolder.Callback {
         }
 
         mCamera.setDisplayOrientation(result);
+
+        Camera.Parameters parameters = mCamera.getParameters();
+
+        parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+        parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_EDOF);
+        parameters.setPreviewFormat(ImageFormat.NV21);
+
+        // Set preview FPS to lowest possible FPS to improve performance and reduce strain
+        List<int[]> fpsRanges = parameters.getSupportedPreviewFpsRange();
+        int[] fpsRange = fpsRanges.get(fpsRanges.size() - 1);
+        parameters.setPreviewFpsRange(fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX], fpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX]);
+
+        Camera.Size previewSize = getOptimalPreviewSize(parameters.getSupportedPreviewSizes(), width, height);
+        parameters.setPreviewSize(previewSize.width, previewSize.height);
+
+        mCamera.setParameters(parameters);
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        releaseCamera();
+    }
+
+    public void releaseCamera() {
+        if (mCamera != null) {
+            mCamera.setPreviewCallback(null);
+            mCamera.stopPreview();
+            mCamera.release();
+            mCamera = null;
+        }
+    }
+
+    public void stopRecording() {
+        if (mCamera != null) {
+            mCamera.setPreviewCallback(null);
+        }
+    }
+
+    public boolean startRecording() {
+        if (mCamera == null) {
+            return false;
+        }
+
+        mCamera.setPreviewCallback(previewCallback);
+
+        return true;
+    }
+
+    private void initCamera() {
+        mCamera = Camera.open(0);
 
         try {
             mCamera.setPreviewDisplay(mSurfaceHolder);
