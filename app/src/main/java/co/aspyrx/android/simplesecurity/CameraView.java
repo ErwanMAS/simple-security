@@ -8,6 +8,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -16,12 +17,14 @@ public class CameraView implements SurfaceHolder.Callback {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
     private static final int PIXEL_VALUE_DIFFERENCE_THRESHOLD = 32;
     private static final int PERCENT_DIFFERENT_PIXELS_THRESHOLD = 20;
+    private static final long MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS = 2000;
     private Activity mActivity;
     private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
     private Camera mCamera;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
     private byte[] lastPreviewFrame;
+    private Date lastMotionFrameDate = new Date(0);
 
     public CameraView(Activity activity, SurfaceView surfaceView) {
         mActivity = activity;
@@ -40,7 +43,7 @@ public class CameraView implements SurfaceHolder.Callback {
         Camera.Parameters parameters = mCamera.getParameters();
 
         parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
-        parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
+        parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_EDOF);
 
         // Set preview FPS to lowest possible FPS to improve performance and reduce strain
         List<int[]> fpsRanges = parameters.getSupportedPreviewFpsRange();
@@ -65,6 +68,50 @@ public class CameraView implements SurfaceHolder.Callback {
             mCamera.release();
             mCamera = null;
         }
+    }
+
+    public void stopRecording() {
+        if (mCamera != null) {
+            mCamera.setPreviewCallback(null);
+        }
+    }
+
+    public boolean startRecording() {
+        if (mCamera == null) {
+            return false;
+        }
+
+        mCamera.setPreviewCallback(new Camera.PreviewCallback() {
+            @Override
+            public void onPreviewFrame(final byte[] data, Camera camera) {
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (lastPreviewFrame != null) {
+                            int diff_count = 0;
+                            for (int i = 0; i < data.length; i++) {
+                                int diff = Math.abs(data[i] - lastPreviewFrame[i]);
+                                if (diff > PIXEL_VALUE_DIFFERENCE_THRESHOLD) {
+                                    diff_count++;
+                                }
+                            }
+
+                            if (diff_count > data.length / 100 * PERCENT_DIFFERENT_PIXELS_THRESHOLD) {
+                                Date now = new Date();
+                                if (now.getTime() - lastMotionFrameDate.getTime() > MS_MIN_TIME_BETWEEN_MOTION_TRIGGERS) {
+                                    Log.v(LOG_TAG, "motion detected");
+                                    lastMotionFrameDate = now;
+                                }
+                            }
+                        }
+
+                        lastPreviewFrame = data;
+                    }
+                });
+            }
+        });
+
+        return true;
     }
 
     private void initCamera() {
@@ -105,32 +152,6 @@ public class CameraView implements SurfaceHolder.Callback {
         } catch (IOException e) {
             Log.e(LOG_TAG, "Error setting camera preview display", e);
         }
-
-        mCamera.setPreviewCallback(new Camera.PreviewCallback() {
-            @Override
-            public void onPreviewFrame(final byte[] data, Camera camera) {
-                executor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (lastPreviewFrame != null) {
-                            int diff_count = 0;
-                            for (int i = 0; i < data.length; i++) {
-                                int diff = Math.abs(data[i] - lastPreviewFrame[i]);
-                                if (diff > PIXEL_VALUE_DIFFERENCE_THRESHOLD) {
-                                    diff_count++;
-                                }
-                            }
-
-                            if (diff_count > data.length / 100 * PERCENT_DIFFERENT_PIXELS_THRESHOLD) {
-                                Log.v(LOG_TAG, "motion detected");
-                            }
-                        }
-
-                        lastPreviewFrame = data;
-                    }
-                });
-            }
-        });
 
         mCamera.startPreview();
     }

@@ -5,8 +5,10 @@ import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.SurfaceView;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.Switch;
 
 public class MainActivity extends AppCompatActivity {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
@@ -48,5 +50,20 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    public void onSurfaceViewClicked(View view) {
+        findViewById(R.id.recordingSwitch).performClick();
+    }
+
+    public void onRecordingSwitchClicked(View view) {
+        Switch recordingSwitch = ((Switch) view);
+        if (recordingSwitch.isChecked()) {
+            if (!mCameraView.startRecording()) {
+                recordingSwitch.toggle();
+            }
+        } else {
+            mCameraView.stopRecording();
+        }
     }
 }

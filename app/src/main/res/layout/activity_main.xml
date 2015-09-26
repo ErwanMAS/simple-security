@@ -8,5 +8,22 @@
         android:id="@+id/cameraSurface"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_gravity="center" />
+        android:layout_gravity="center"
+        android:nestedScrollingEnabled="false"
+        android:onClick="onSurfaceViewClicked" />
+
+    <Switch
+        android:id="@+id/recordingSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="right|bottom"
+        android:layout_marginBottom="@dimen/activity_horizontal_margin"
+        android:layout_marginRight="@dimen/activity_vertical_margin"
+        android:checked="false"
+        android:clickable="false"
+        android:onClick="onRecordingSwitchClicked"
+        android:switchPadding="@dimen/activity_horizontal_margin"
+        android:text="@string/switch_recording_text"
+        android:textAppearance="@style/Base.TextAppearance.AppCompat.Large"
+        android:textColor="@color/bright_foreground_material_dark" />
 </FrameLayout>
