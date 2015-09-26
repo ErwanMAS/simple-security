@@ -9,14 +9,19 @@ import android.view.SurfaceView;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class CameraView implements SurfaceHolder.Callback {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
-
+    private static final int PIXEL_VALUE_DIFFERENCE_THRESHOLD = 32;
+    private static final int PERCENT_DIFFERENT_PIXELS_THRESHOLD = 20;
     private Activity mActivity;
     private SurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
     private Camera mCamera;
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private byte[] lastPreviewFrame;
 
     public CameraView(Activity activity, SurfaceView surfaceView) {
         mActivity = activity;
@@ -103,8 +108,27 @@ public class CameraView implements SurfaceHolder.Callback {
 
         mCamera.setPreviewCallback(new Camera.PreviewCallback() {
             @Override
-            public void onPreviewFrame(byte[] data, Camera camera) {
+            public void onPreviewFrame(final byte[] data, Camera camera) {
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (lastPreviewFrame != null) {
+                            int diff_count = 0;
+                            for (int i = 0; i < data.length; i++) {
+                                int diff = Math.abs(data[i] - lastPreviewFrame[i]);
+                                if (diff > PIXEL_VALUE_DIFFERENCE_THRESHOLD) {
+                                    diff_count++;
+                                }
+                            }
 
+                            if (diff_count > data.length / 100 * PERCENT_DIFFERENT_PIXELS_THRESHOLD) {
+                                Log.v(LOG_TAG, "motion detected");
+                            }
+                        }
+
+                        lastPreviewFrame = data;
+                    }
+                });
             }
         });
 
